@@ -42,5 +42,6 @@ This launches an interactive fzf menu where you can select which tools to instal
 | Command | Description |
 |---------|-------------|
 | `./setup.sh` | Interactive fzf menu |
+| `./setup.sh --uninstall` | Uninstall selected tools |
 | `./setup.sh --regen` | Regenerate cached system info |
 | `./setup.sh --help` | Show help |

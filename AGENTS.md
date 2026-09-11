@@ -48,6 +48,8 @@ The universal launcher. It owns **all** system detection logic:
 4. **fzf multi-select menu** — user picks tools to install
 5. **Exports `DISTRO` and `SHELLS`** — then runs each selected script in sequence
 
+Also supports `--uninstall` which lists installed tools (by scanning `~/.setup.d/*.sh` and `~/.config/fish/conf.d/*.fish`), presents an fzf picker, then runs each selected script with `UNINSTALL=1`. After uninstall, if `~/.setup.d/` has no `.sh` files left, the sourcing block is removed from bashrc/zshrc.
+
 ### env file (auto-generated)
 
 Cached system info, created on first run:
@@ -127,12 +129,40 @@ cmd_exists() { command -v "$1" &>/dev/null; }
 Each script must have these sections in order:
 
 1. **Colors & logging helpers**
-2. **Dependency installation** — install OS packages via the distro's package manager
-3. **Tool installation** — install the actual tool
-4. **Shell configuration** — one function per shell (`configure_bash`, `configure_zsh`, `configure_fish`)
-5. **`main()` function** — orchestrates the above steps
+2. **`SETUP_NUM` and `SETUP_NAME` constants**
+3. **Dependency installation** — install OS packages via the distro's package manager
+4. **Tool installation** — install the actual tool
+5. **`ensure_source_block`** — idempotent rc-file source loop for `~/.setup.d`
+6. **`setup_shell`** — writes `~/.setup.d/<num>-<tool>.sh` + fish conf.d file, ensures source block
+7. **`uninstall`** — removes the setup.d file, fish conf.d file, and tool data dirs
+8. **`main()`** — handles `UNINSTALL=1` mode, else install_deps → install_tool → setup_shell
 
-### 5. Dependency Installation
+### 5. SETUP_NUM and SETUP_NAME
+
+Every script defines two constants:
+
+```bash
+SETUP_NUM=NN       # unique number (see numbering table)
+SETUP_NAME="tool"  # tool name matching the filename suffix
+```
+
+**Numbering scheme** — each tool gets a unique two-digit number:
+
+| Tool | Number |
+|------|--------|
+| pyenv | 10 |
+| uv | 15 |
+| pipx | 20 |
+| poetry | 25 |
+| miniconda | 30 |
+| anaconda | 40 |
+| nvm | 50 |
+| bun | 60 |
+| rustup | 70 |
+
+New tools get a number between existing ones (e.g. 12, 35, 55).
+
+### 6. Dependency Installation
 
 Follow the same pattern from `scripts/setup-pyenv.sh`. Key rules:
 
@@ -177,7 +207,7 @@ install_deps() {
 }
 ```
 
-### 6. Tool Installation
+### 7. Tool Installation
 
 - If the tool is already installed (use `cmd_exists`), offer to update it instead
 - Otherwise install via official installer (curl pipe, git clone, etc.)
@@ -195,38 +225,67 @@ install_<tool>() {
 }
 ```
 
-### 7. Shell Configuration
+### 8. Shell Configuration
 
-| Shell  | Config Location                            | Method                          |
-|--------|---------------------------------------------|---------------------------------|
-| bash   | `~/.bashrc`                                 | Append block                    |
-| zsh    | `~/.zshrc`                                  | Append block                    |
-| fish   | `~/.config/fish/conf.d/<tool>.fish`         | Write file to conf.d            |
+Tool startup code is managed via `~/.setup.d/`:
 
-**Idempotency:** all config functions must be silent no-ops if already configured:
-- bash/zsh: `grep -q "# <tool> setup" "$rc" 2>/dev/null && return`
-- fish: `[ -f "$file" ] && return`
+| Shell  | Config Location                                   | Method                          |
+|--------|---------------------------------------------------|---------------------------------|
+| bash   | `~/.bashrc`                                       | One-time source block for `~/.setup.d/*.sh` |
+| zsh    | `~/.zshrc`                                        | One-time source block for `~/.setup.d/*.sh` |
+| fish   | `~/.config/fish/conf.d/<num>-<tool>.fish`         | Native auto-source by filename   |
 
-Use a heredoc with the unique comment marker `# <tool> setup` at the top of each block.
+**bash/zsh:** Each script writes a numbered file `~/.setup.d/<num>-<tool>.sh`. The rc file gets a **single** idempotent sourcing block (once, never duplicated):
 
-For bash/zsh heredocs, **always quote the delimiter** (`<< 'EOF'`) to prevent variable expansion.
+```bash
+# === setup.d ===
+for f in "$HOME/.setup.d"/*.sh; do
+    [ -f "$f" ] && . "$f"
+done
+# === end setup.d ===
+```
 
-Only print `info "Configured $rc"` when actually writing (not when skipping).
+The `ensure_source_block <rc>` helper writes this block only if the `# === setup.d ===` marker is not yet present.
 
-### 8. Main Function
+**fish:** Each script writes `~/.config/fish/conf.d/<num>-<tool>.fish`. Fish auto-sources all files in `conf.d/` in sorted filename order, so the number prefix controls execution order automatically.
+
+**Idempotency:** bash/zsh source blocks are never duplicated (checked by marker). Fish files are overwritten if they already exist.
+
+### 9. Uninstall
+
+Each script must define an `uninstall()` function that removes:
+1. The `~/.setup.d/<num>-<tool>.sh` file
+2. The `~/.config/fish/conf.d/<num>-<tool>.fish` file
+3. The tool's data directories (tool-specific)
+
+When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. After all uninstalls, `setup.sh` removes the source block from bashrc/zshrc if `~/.setup.d/` has no `.sh` files left.
+
+**Uninstall directory mapping:**
+
+| Tool | Directories removed |
+|------|---------------------|
+| pyenv | `~/.pyenv` |
+| uv | `~/.local/bin/uv{,x}`, `~/.cache/uv`, `~/.local/share/uv` |
+| pipx | `~/.local/pipx`, `~/.local/bin/pipx` |
+| poetry | `~/.local/bin/poetry`, `~/.local/share/pypoetry`, `~/.cache/pypoetry` |
+| miniconda | `~/.miniconda3` |
+| anaconda | `~/.anaconda3` |
+| nvm | `~/.nvm` |
+| bun | `~/.bun` |
+| rustup | `~/.rustup`, `~/.cargo` |
+
+### 10. Main Function
 
 ```bash
 main() {
-    install_deps    # uses $DISTRO directly
-    install_<tool>
+    if [ "${UNINSTALL:-0}" = "1" ]; then
+        uninstall
+        exit 0
+    fi
 
-    for sh in $SHELLS; do
-        case "$sh" in
-            bash) configure_bash ;;
-            zsh)  configure_zsh  ;;
-            fish) configure_fish ;;
-        esac
-    done
+    install_deps
+    install_<tool>
+    setup_shell
 
     ok "<tool> ready! Run: <example usage>"
 }
@@ -236,7 +295,7 @@ main "$@"
 
 Success message should include a short example of how to actually use the tool.
 
-### 9. Permissions
+### 11. Permissions
 
 After creating a script, always run:
 ```bash
@@ -247,9 +306,11 @@ chmod +x scripts/setup-<tool>.sh
 
 1. Copy `scripts/setup-pyenv.sh` as a template
 2. Replace the tool-specific logic:
-   - Rename `install_pyenv` → `install_<tool>`, `configure_bash`, etc.
+   - Rename `install_pyenv` → `install_<tool>`, update `SETUP_NUM`, `SETUP_NAME`
+   - Pick a unique number (see numbering table)
    - Update the dependency list per distro (research what build deps are needed)
    - Update the shell config blocks to match the tool's requirements
+   - Update `uninstall()` with the correct data directories to remove
 3. Update the success message with correct usage instructions
 4. Make executable: `chmod +x scripts/setup-<tool>.sh`
 5. Verify it runs without syntax errors and is executable (see Testing)

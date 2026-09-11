@@ -82,7 +82,6 @@ ensure_fzf() {
 
 load_env() {
     if [ -f "$ENV_FILE" ]; then
-        # shellcheck disable=SC1090
         source "$ENV_FILE"
         return
     fi
@@ -97,7 +96,6 @@ DISTRO=$distro
 SHELLS=$shells
 EOF
 
-    # shellcheck disable=SC1090
     source "$ENV_FILE"
 }
 
@@ -117,6 +115,40 @@ EOF
 
 list_scripts() {
     find "$SCRIPT_DIR/scripts" -maxdepth 1 -name 'setup-*.sh' -type f | sort
+}
+
+list_installed() {
+    local installed=()
+
+    if [ -d "$HOME/.setup.d" ]; then
+        for f in "$HOME"/.setup.d/[0-9]*-*.sh; do
+            [ -f "$f" ] || continue
+            local name
+            name=$(basename "$f" .sh | sed 's/^[0-9]*-//')
+            if [ -f "$SCRIPT_DIR/scripts/setup-${name}.sh" ]; then
+                installed+=("$name")
+            fi
+        done
+    fi
+
+    for f in "$HOME"/.config/fish/conf.d/[0-9]*-*.fish; do
+        [ -f "$f" ] || continue
+        local name
+        name=$(basename "$f" .fish | sed 's/^[0-9]*-//')
+        if [ -f "$SCRIPT_DIR/scripts/setup-${name}.sh" ] && [[ ! " ${installed[*]:-} " =~ " ${name} " ]]; then
+            installed+=("$name")
+        fi
+    done
+
+    printf '%s\n' "${installed[@]:-}"
+}
+
+cleanup_source_blocks() {
+    local rc
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        [ -f "$rc" ] || continue
+        sed -i '/^# === setup\.d ===$/,/^# === end setup\.d ===$/d' "$rc"
+    done
 }
 
 main() {
@@ -156,16 +188,56 @@ main() {
     echo ""
 }
 
+main_uninstall() {
+    local installed
+    installed=$(list_installed)
+
+    if [ -z "$installed" ]; then
+        warn "Nothing to uninstall."
+        return
+    fi
+
+    local selected
+    selected=$(echo "$installed" | fzf --multi --prompt="Pick tools to uninstall > " --height=40% --reverse) || true
+
+    if [ -z "$selected" ]; then
+        exit 0
+    fi
+
+    export DISTRO="${DISTRO:-}"
+    export SHELLS="${SHELLS:-}"
+
+    echo "$selected" | while IFS= read -r name; do
+        local target="$SCRIPT_DIR/scripts/setup-${name}.sh"
+        if [ -f "$target" ]; then
+            UNINSTALL=1 bash "$target"
+        fi
+    done
+
+    if [ -d "$HOME/.setup.d" ] && [ -z "$(ls -A "$HOME"/.setup.d/*.sh 2>/dev/null)" ]; then
+        cleanup_source_blocks
+    fi
+
+    echo ""
+    ok "Uninstall done!"
+    echo ""
+}
+
 case "${1:-}" in
     --help|-h)
         echo ""
         echo "Usage: ./setup.sh [option]"
         echo ""
         echo "Options:"
-        echo "  (none)     Launch interactive fzf menu"
-        echo "  --regen    Regenerate the env file"
-        echo "  --help     Show this help"
+        echo "  (none)       Launch interactive fzf menu"
+        echo "  --uninstall  Uninstall selected tools"
+        echo "  --regen      Regenerate the env file"
+        echo "  --help       Show this help"
         echo ""
+        ;;
+    --uninstall)
+        load_env
+        main_uninstall
         ;;
     --regen)
         regen_env

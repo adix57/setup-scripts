@@ -14,6 +14,9 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 cmd_exists() { command -v "$1" &>/dev/null; }
 
+SETUP_NUM=70
+SETUP_NAME="rustup"
+
 install_deps() {
     local pkgs=()
 
@@ -57,52 +60,67 @@ install_rustup() {
     ok "rustup installed"
 }
 
-configure_bash() {
-    local rc="$HOME/.bashrc"
-    grep -q "# rustup setup" "$rc" 2>/dev/null && return
-    cat >> "$rc" << 'RUSTUP_BLOCK'
+ensure_source_block() {
+    local rc=$1
+    grep -q "# === setup.d ===" "$rc" 2>/dev/null && return
+    cat >> "$rc" << 'RC_BLOCK'
 
-# rustup setup
-[ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH"
-RUSTUP_BLOCK
-    info "Configured $rc"
+# === setup.d ===
+for f in "$HOME/.setup.d"/*.sh; do
+    [ -f "$f" ] && . "$f"
+done
+# === end setup.d ===
+RC_BLOCK
 }
 
-configure_zsh() {
-    local rc="$HOME/.zshrc"
-    grep -q "# rustup setup" "$rc" 2>/dev/null && return
-    cat >> "$rc" << 'RUSTUP_BLOCK'
+setup_shell() {
+    mkdir -p "$HOME/.setup.d"
 
+    cat > "$HOME/.setup.d/${SETUP_NUM}-${SETUP_NAME}.sh" << 'TOOL_BLOCK'
 # rustup setup
 [ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH"
-RUSTUP_BLOCK
-    info "Configured $rc"
-}
+TOOL_BLOCK
 
-configure_fish() {
-    local file="$HOME/.config/fish/conf.d/rustup.fish"
-    mkdir -p "$(dirname "$file")"
-    [ -f "$file" ] && return
-    cat > "$file" << 'RUSTUP_FISH'
+    for sh in $SHELLS; do
+        case "$sh" in
+            bash)
+                ensure_source_block "$HOME/.bashrc"
+                ;;
+            zsh)
+                ensure_source_block "$HOME/.zshrc"
+                ;;
+            fish)
+                mkdir -p "$HOME/.config/fish/conf.d"
+                cat > "$HOME/.config/fish/conf.d/${SETUP_NUM}-${SETUP_NAME}.fish" << 'FISH_BLOCK'
 # rustup setup
 if test -d "$HOME/.cargo/bin"
     set -gx PATH $HOME/.cargo/bin $PATH
 end
-RUSTUP_FISH
-    info "Configured $file"
+FISH_BLOCK
+                ;;
+        esac
+    done
+
+    info "Configured ${SETUP_NAME}"
+}
+
+uninstall() {
+    rm -f "$HOME/.setup.d/${SETUP_NUM}-${SETUP_NAME}.sh"
+    rm -f "$HOME/.config/fish/conf.d/${SETUP_NUM}-${SETUP_NAME}.fish"
+    rustup self uninstall -y 2>/dev/null || true
+    rm -rf "$HOME/.rustup" "$HOME/.cargo"
+    ok "rustup uninstalled"
 }
 
 main() {
+    if [ "${UNINSTALL:-0}" = "1" ]; then
+        uninstall
+        exit 0
+    fi
+
     install_deps
     install_rustup
-
-    for sh in $SHELLS; do
-        case "$sh" in
-            bash) configure_bash ;;
-            zsh)  configure_zsh  ;;
-            fish) configure_fish ;;
-        esac
-    done
+    setup_shell
 
     ok "rustup ready! Run: rustup default stable"
 }
