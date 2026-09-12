@@ -151,8 +151,35 @@ cleanup_source_blocks() {
     done
 }
 
+ensure_source_blocks() {
+    if [ "${SHELLS:-}" = "fish" ]; then
+        return
+    fi
+
+    case "$SHELLS" in
+        *bash*) ensure_source_block "$HOME/.bashrc" ;;
+    esac
+    case "$SHELLS" in
+        *zsh*) ensure_source_block "$HOME/.zshrc" ;;
+    esac
+}
+
+ensure_source_block() {
+    local rc=$1
+    grep -q "# === setup.d ===" "$rc" 2>/dev/null && return
+    cat >> "$rc" << 'RC_BLOCK'
+
+# === setup.d ===
+for f in "$HOME/.setup.d"/*.sh; do
+    [ -f "$f" ] && . "$f"
+done
+# === end setup.d ===
+RC_BLOCK
+}
+
 main() {
     load_env
+    ensure_source_blocks
 
     local items=()
     while IFS= read -r s; do
