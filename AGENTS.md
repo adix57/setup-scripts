@@ -26,6 +26,8 @@ setup-scripts/
 ├── config/            # Per-tool default config files, copied at setup time
 │   └── ssh/           # SSH client config
 │       └── config     # → ~/.ssh/config
+├── lib/               # Reusable functions shared by setup scripts
+│   └── checklist.sh   # Interactive checklist + yes/no prompt
 └── scripts/
     ├── setup-pyenv.sh # pyenv — Python version manager
     ├── setup-uv.sh    # uv — fast Python package installer
@@ -166,6 +168,26 @@ SETUP_NAME="tool"  # tool name matching the filename suffix
 | rustup | 70 |
 
 New tools get a number between existing ones (e.g. 12, 35, 55).
+
+### 5.5 Shared Library (`lib/`)
+
+Reusable UI/helper functions live in `lib/` and are sourced by any script that needs them:
+
+```bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/checklist.sh"
+```
+
+Available helpers:
+
+- **`checklist`** — interactive multi-select. Usage:
+  ```bash
+  selection=$(checklist "SSH authentication methods:" "*PasswordAuthentication" "*PubkeyAuthentication") || exit 1
+  ```
+  Prefix an item with `*` to mark it checked by default. Selected items print to stdout, one per line (prefix stripped). If stdin is not a TTY (e.g. piped), it returns the default-checked items without prompting.
+- **`ask_yesno`** — `ask_yesno "Proceed?"; [ $? -eq 0 ] && ...` — returns 0 on yes, 1 on no. Non-interactive stdin returns yes.
+
+Add new shared functions to a file under `lib/` and document them here.
 
 ### 6. Dependency Installation
 

@@ -201,7 +201,12 @@ main() {
     export DISTRO="$DISTRO"
     export SHELLS="$SHELLS"
 
-    echo "$selected" | while IFS= read -r name; do
+    local names=()
+    while IFS= read -r name; do
+        names+=("$name")
+    done <<< "$selected"
+
+    for name in "${names[@]}"; do
         local target="$SCRIPT_DIR/scripts/setup-${name}.sh"
         if [ -f "$target" ]; then
             bash "$target"
@@ -234,7 +239,12 @@ main_uninstall() {
     export DISTRO="${DISTRO:-}"
     export SHELLS="${SHELLS:-}"
 
-    echo "$selected" | while IFS= read -r name; do
+    local names=()
+    while IFS= read -r name; do
+        names+=("$name")
+    done <<< "$selected"
+
+    for name in "${names[@]}"; do
         local target="$SCRIPT_DIR/scripts/setup-${name}.sh"
         if [ -f "$target" ]; then
             UNINSTALL=1 bash "$target"

@@ -19,6 +19,8 @@ SETUP_NAME="ssh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$SCRIPT_DIR/../config/${SETUP_NAME}"
 
+source "$SCRIPT_DIR/../lib/checklist.sh"
+
 install_deps() {
     local pkgs=()
 
@@ -51,14 +53,34 @@ install_deps() {
     esac
 }
 
+ask_auth_options() {
+    if [ ! -t 0 ]; then
+        PASSWORD_AUTH=yes
+        PUBKEY_AUTH=yes
+        return
+    fi
+
+    local selection
+    selection=$(checklist "SSH authentication methods:" "*PasswordAuthentication" "*PubkeyAuthentication") || return 1
+
+    PASSWORD_AUTH=no
+    PUBKEY_AUTH=no
+    if echo "$selection" | grep -q "PasswordAuthentication"; then
+        PASSWORD_AUTH=yes
+    fi
+    if echo "$selection" | grep -q "PubkeyAuthentication"; then
+        PUBKEY_AUTH=yes
+    fi
+}
+
 configure_sshd() {
     local conf=/etc/ssh/sshd_config
     [ -f "$conf" ] || return
 
-    info "Enabling password and pubkey authentication in $conf..."
+    info "Setting PasswordAuthentication=$PASSWORD_AUTH PubkeyAuthentication=$PUBKEY_AUTH in $conf..."
     sudo sed -i \
-        -e 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' \
-        -e 's/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' \
+        -e "s/^#\?PasswordAuthentication .*/PasswordAuthentication $PASSWORD_AUTH/" \
+        -e "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication $PUBKEY_AUTH/" \
         "$conf"
 
     if command -v sshd >/dev/null 2>&1; then
@@ -115,6 +137,10 @@ setup_shell() {
 
     cat > "$HOME/.setup.d/${SETUP_NUM}-${SETUP_NAME}.sh" << 'TOOL_BLOCK'
 # ssh-agent setup — single shared agent
+SSH_KEYS=(
+    ~/.ssh/id_ed25519
+    # ~/.ssh/key2
+)
 [ -z "${SSH_AUTH_SOCK:-}" ] && export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
 ssh-add -l >/dev/null 2>&1
 rc=$?
@@ -122,10 +148,12 @@ if [ "$rc" -eq 2 ]; then
     rm -f "$HOME/.ssh/agent.sock" 2>/dev/null || true
     ssh-agent -a "$HOME/.ssh/agent.sock" >/dev/null 2>&1 || true
 fi
-[ -f "$HOME/.ssh/id_ed25519" ] && ssh-add "$HOME/.ssh/id_ed25519" >/dev/null 2>&1 || true
+for key in "${SSH_KEYS[@]}"; do
+    [ -f "$key" ] && ssh-add "$key" >/dev/null 2>&1 || true
+done
 TOOL_BLOCK
 
-    for sh in $SHELLS; do
+    for sh in ${SHELLS//,/ }; do
         case "$sh" in
             bash)
                 ensure_source_block "$HOME/.bashrc"
@@ -137,6 +165,8 @@ TOOL_BLOCK
                 mkdir -p "$HOME/.config/fish/conf.d"
                 cat > "$HOME/.config/fish/conf.d/${SETUP_NUM}-${SETUP_NAME}.fish" << 'FISH_BLOCK'
 # ssh-agent setup — single shared agent
+set SSH_KEYS ~/.ssh/id_ed25519
+# set SSH_KEYS $SSH_KEYS ~/.ssh/key2
 if not set -q SSH_AUTH_SOCK
     set -gx SSH_AUTH_SOCK $HOME/.ssh/agent.sock
 end
@@ -146,8 +176,10 @@ if test $rc -eq 2
     rm -f $HOME/.ssh/agent.sock 2>/dev/null
     ssh-agent -a $HOME/.ssh/agent.sock >/dev/null 2>&1
 end
-if test -f $HOME/.ssh/id_ed25519
-    ssh-add $HOME/.ssh/id_ed25519 >/dev/null 2>&1
+for key in $SSH_KEYS
+    if test -f $key
+        ssh-add $key >/dev/null 2>&1
+    end
 end
 FISH_BLOCK
                 ;;
@@ -172,6 +204,7 @@ main() {
     fi
 
     install_deps
+    ask_auth_options
     install_ssh
     setup_shell
 
