@@ -1,0 +1,4 @@
+# SSH client configuration (installed by setup-scripts)
+Host *
+    IdentityFile ~/.ssh/id_ed25519
+    AddKeysToAgent yes

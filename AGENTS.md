@@ -23,6 +23,9 @@ setup-scripts/
 ├── setup.sh           # Main entry point — fzf launcher
 ├── .gitignore         # Ignores generated env file
 ├── env                # Cached system info (auto-generated, git-ignored)
+├── config/            # Per-tool default config files, copied at setup time
+│   └── ssh/           # SSH client config
+│       └── config     # → ~/.ssh/config
 └── scripts/
     ├── setup-pyenv.sh # pyenv — Python version manager
     ├── setup-uv.sh    # uv — fast Python package installer
@@ -33,6 +36,7 @@ setup-scripts/
     ├── setup-rustup.sh # rustup — Rust toolchain installer
     ├── setup-miniconda.sh # miniconda — minimal Python distro
     ├── setup-anaconda.sh # anaconda — full data science distro
+    ├── setup-ssh.sh    # ssh — openssh + single shared ssh-agent
     └── ...            # More tools as needed
 ```
 
@@ -150,6 +154,7 @@ SETUP_NAME="tool"  # tool name matching the filename suffix
 
 | Tool | Number |
 |------|--------|
+| ssh | 05 |
 | pyenv | 10 |
 | uv | 15 |
 | pipx | 20 |
@@ -251,6 +256,23 @@ The `ensure_source_block <rc>` helper writes this block only if the `# === setup
 
 **Idempotency:** bash/zsh source blocks are never duplicated (checked by marker). Fish files are overwritten if they already exist.
 
+### 8.5 Config File Copying
+
+Tools that ship a default config file (e.g. ssh's `~/.ssh/config`) store it in `config/<tool>/<filename>`. At setup time the script copies it to its target location:
+
+- Only copy if the destination does **not** already exist (never clobber a user's own config)
+- Preserve correct permissions (`chmod`)
+- Derive the config dir from the script's own location: `SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` then `"$SCRIPT_DIR/../config/<tool>"`
+
+Example from `setup-ssh.sh`:
+
+```bash
+if [ -f "$CONFIG_DIR/config" ] && [ ! -f "$HOME/.ssh/config" ]; then
+    cp "$CONFIG_DIR/config" "$HOME/.ssh/config"
+    chmod 600 "$HOME/.ssh/config"
+fi
+```
+
 ### 9. Uninstall
 
 Each script must define an `uninstall()` function that removes:
@@ -264,6 +286,7 @@ When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. 
 
 | Tool | Directories removed |
 |------|---------------------|
+| ssh | `~/.ssh/agent.sock` (kills agent on that socket) |
 | pyenv | `~/.pyenv` |
 | uv | `~/.local/bin/uv{,x}`, `~/.cache/uv`, `~/.local/share/uv` |
 | pipx | `~/.local/pipx`, `~/.local/bin/pipx` |
@@ -273,6 +296,8 @@ When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. 
 | nvm | `~/.nvm` |
 | bun | `~/.bun` |
 | rustup | `~/.rustup`, `~/.cargo` |
+
+Note: `ssh` uninstall does **not** remove `~/.ssh/config` (user may have their own) — it only removes the agent socket, the setup.d file, and kills the shared agent.
 
 ### 10. Main Function
 
