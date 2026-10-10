@@ -39,6 +39,7 @@ setup-scripts/
     ├── setup-miniconda.sh # miniconda — minimal Python distro
     ├── setup-anaconda.sh # anaconda — full data science distro
     ├── setup-ssh.sh    # ssh — openssh + single shared ssh-agent
+    ├── setup-vsftpd.sh # vsftpd — FTP server
     └── ...            # More tools as needed
 ```
 
@@ -157,6 +158,7 @@ SETUP_NAME="tool"  # tool name matching the filename suffix
 | Tool | Number |
 |------|--------|
 | ssh | 05 |
+| vsftpd | 06 |
 | pyenv | 10 |
 | uv | 15 |
 | pipx | 20 |
@@ -309,6 +311,7 @@ When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. 
 | Tool | Directories removed |
 |------|---------------------|
 | ssh | `~/.ssh/agent.sock` (kills agent on that socket), `/etc/ssh/sshd_config.d/00-setup-scripts.conf` (if managed) |
+| vsftpd | none (stops/disables the service, restores the backed-up `/etc/vsftpd.conf`) |
 | pyenv | `~/.pyenv` |
 | uv | `~/.local/bin/uv{,x}`, `~/.cache/uv`, `~/.local/share/uv` |
 | pipx | `~/.local/pipx`, `~/.local/bin/pipx` |

@@ -19,6 +19,7 @@ Bash, Zsh, Fish
 | Tool | Description |
 |------|-------------|
 | [ssh](https://www.openssh.com/) | OpenSSH + single shared ssh-agent; optional opt-in system-wide sshd config |
+| [vsftpd](https://security.appspot.com/vsftpd.html) | Very Secure FTP daemon — FTP server with a managed, clash-safe config |
 | [pyenv](https://github.com/pyenv/pyenv) | Python version manager (with pyenv-virtualenv) |
 | [uv](https://docs.astral.sh/uv/) | Fast Python package installer & resolver |
 | [pipx](https://github.com/pypa/pipx) | Install and run Python applications in isolated environments |
