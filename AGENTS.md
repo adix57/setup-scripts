@@ -185,7 +185,7 @@ Available helpers:
   selection=$(checklist "SSH authentication methods:" "*PasswordAuthentication" "*PubkeyAuthentication") || exit 1
   ```
   Prefix an item with `*` to mark it checked by default. Selected items print to stdout, one per line (prefix stripped). If stdin is not a TTY (e.g. piped), it returns the default-checked items without prompting.
-- **`ask_yesno`** — `ask_yesno "Proceed?"; [ $? -eq 0 ] && ...` — returns 0 on yes, 1 on no. Non-interactive stdin returns yes.
+- **`ask_yesno`** — `ask_yesno "Proceed?" [default]` — returns 0 on yes, 1 on no. The optional second argument sets the default answer for empty or non-interactive input (`yes` or `no`; defaults to `yes`).
 
 Add new shared functions to a file under `lib/` and document them here.
 
@@ -308,7 +308,7 @@ When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. 
 
 | Tool | Directories removed |
 |------|---------------------|
-| ssh | `~/.ssh/agent.sock` (kills agent on that socket) |
+| ssh | `~/.ssh/agent.sock` (kills agent on that socket), `/etc/ssh/sshd_config.d/00-setup-scripts.conf` (if managed) |
 | pyenv | `~/.pyenv` |
 | uv | `~/.local/bin/uv{,x}`, `~/.cache/uv`, `~/.local/share/uv` |
 | pipx | `~/.local/pipx`, `~/.local/bin/pipx` |
@@ -319,7 +319,7 @@ When `UNINSTALL=1` is in the environment, `main()` calls `uninstall` and exits. 
 | bun | `~/.bun` |
 | rustup | `~/.rustup`, `~/.cargo` |
 
-Note: `ssh` uninstall does **not** remove `~/.ssh/config` (user may have their own) — it only removes the agent socket, the setup.d file, and kills the shared agent.
+Note: `ssh` uninstall does **not** remove `~/.ssh/config` (user may have their own) — it removes the agent socket, the setup.d/fish files, kills the shared agent, and removes the managed `/etc/ssh/sshd_config.d/00-setup-scripts.conf` drop-in (if present). System-wide sshd configuration is opt-in during setup and never overwrites a config already managed by another user; use `./setup.sh --force` to override it.
 
 ### 10. Main Function
 

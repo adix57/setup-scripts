@@ -18,7 +18,7 @@ Bash, Zsh, Fish
 
 | Tool | Description |
 |------|-------------|
-| [ssh](https://www.openssh.com/) | OpenSSH + single shared ssh-agent, choose password/pubkey auth during setup |
+| [ssh](https://www.openssh.com/) | OpenSSH + single shared ssh-agent; optional opt-in system-wide sshd config |
 | [pyenv](https://github.com/pyenv/pyenv) | Python version manager (with pyenv-virtualenv) |
 | [uv](https://docs.astral.sh/uv/) | Fast Python package installer & resolver |
 | [pipx](https://github.com/pypa/pipx) | Install and run Python applications in isolated environments |

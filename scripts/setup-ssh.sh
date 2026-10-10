@@ -18,6 +18,7 @@ SETUP_NUM=05
 SETUP_NAME="ssh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$SCRIPT_DIR/../config/${SETUP_NAME}"
+SSHD_DROPIN=/etc/ssh/sshd_config.d/00-setup-scripts.conf
 
 source "$SCRIPT_DIR/../lib/checklist.sh"
 
@@ -74,18 +75,51 @@ ask_auth_options() {
 }
 
 configure_sshd() {
-    local conf=/etc/ssh/sshd_config
-    [ -f "$conf" ] || return
-
-    info "Setting PasswordAuthentication=$PASSWORD_AUTH PubkeyAuthentication=$PUBKEY_AUTH in $conf..."
-    sudo sed -i \
-        -e "s/^#\?PasswordAuthentication .*/PasswordAuthentication $PASSWORD_AUTH/" \
-        -e "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication $PUBKEY_AUTH/" \
-        "$conf"
-
-    if command -v sshd >/dev/null 2>&1; then
-        sudo sshd -t 2>/dev/null || true
+    if [ "${SETUP_SSHD_FORCE:-0}" != "1" ]; then
+        ask_yesno "Configure the system-wide SSH server (affects all users)?" no || return 0
     fi
+
+    ask_auth_options || return 0
+
+    local desired current
+    desired=$(printf 'PasswordAuthentication %s\nPubkeyAuthentication %s' "$PASSWORD_AUTH" "$PUBKEY_AUTH")
+
+    if [ -f "$SSHD_DROPIN" ] && [ "${SETUP_SSHD_FORCE:-0}" != "1" ]; then
+        current=$(grep -E '^(PasswordAuthentication|PubkeyAuthentication)' "$SSHD_DROPIN" 2>/dev/null || true)
+        if [ "$current" = "$desired" ]; then
+            return 0
+        fi
+        warn "sshd is already configured system-wide with different settings; skipping"
+        warn "Re-run with --force to override"
+        return 0
+    fi
+
+    if ! sudo grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config 2>/dev/null; then
+        warn "/etc/ssh/sshd_config does not include sshd_config.d/*.conf; skipping system-wide config"
+        return 0
+    fi
+
+    info "Configuring system-wide sshd..."
+    sudo mkdir -p "$(dirname "$SSHD_DROPIN")"
+    printf '# Managed by setup-scripts — removed on uninstall\n%s\n' "$desired" | sudo tee "$SSHD_DROPIN" >/dev/null
+    sudo chmod 644 "$SSHD_DROPIN"
+
+    if cmd_exists sshd; then
+        if ! sudo sshd -t 2>/dev/null; then
+            warn "sshd config validation failed; reverting"
+            sudo rm -f "$SSHD_DROPIN"
+            return 0
+        fi
+    fi
+
+    if cmd_exists systemctl; then
+        local svc=sshd
+        [ "${DISTRO:-}" = "debian" ] && svc=ssh
+        sudo systemctl enable "$svc" 2>/dev/null || true
+        sudo systemctl restart "$svc" 2>/dev/null || true
+    fi
+
+    ok "sshd configured (PasswordAuthentication=$PASSWORD_AUTH PubkeyAuthentication=$PUBKEY_AUTH)"
 }
 
 install_ssh() {
@@ -105,15 +139,6 @@ install_ssh() {
         else
             warn "~/.ssh/config already exists, leaving as-is"
         fi
-    fi
-
-    configure_sshd
-
-    if cmd_exists systemctl; then
-        local svc=sshd
-        [ "$DISTRO" = "debian" ] && svc=ssh
-        sudo systemctl enable "$svc" 2>/dev/null || true
-        sudo systemctl restart "$svc" 2>/dev/null || true
     fi
 
     ok "ssh installed"
@@ -194,6 +219,16 @@ uninstall() {
     rm -f "$HOME/.config/fish/conf.d/${SETUP_NUM}-${SETUP_NAME}.fish"
     pkill -f "ssh-agent -a $HOME/.ssh/agent.sock" 2>/dev/null || true
     rm -f "$HOME/.ssh/agent.sock"
+
+    if [ -f "$SSHD_DROPIN" ]; then
+        sudo rm -f "$SSHD_DROPIN"
+        if cmd_exists sshd && sudo sshd -t 2>/dev/null && cmd_exists systemctl; then
+            local svc=sshd
+            [ "${DISTRO:-}" = "debian" ] && svc=ssh
+            sudo systemctl restart "$svc" 2>/dev/null || true
+        fi
+    fi
+
     ok "ssh uninstalled"
 }
 
@@ -204,8 +239,8 @@ main() {
     fi
 
     install_deps
-    ask_auth_options
     install_ssh
+    configure_sshd
     setup_shell
 
     ok "ssh ready! Run: ssh-add -l"

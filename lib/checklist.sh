@@ -110,17 +110,27 @@ checklist() {
 }
 
 # Simple yes/no confirmation. Returns 0 on yes, 1 on no.
+# Second argument is the default for empty or non-interactive input: "yes" or "no".
 ask_yesno() {
     local prompt="${1:-Proceed?}"
+    local default="${2:-yes}"
+    local hint='[Y/n]'
+    [ "$default" = "no" ] && hint='[y/N]'
     local ans
-    printf '%s [Y/n] ' "$prompt" >&2
+    printf '%s %s ' "$prompt" "$hint" >&2
     if [ ! -t 0 ]; then
         printf '\n' >&2
+        [ "$default" = "no" ] && return 1
         return 0
     fi
     IFS= read -r ans || true
     case "${ans,,}" in
         n | no) return 1 ;;
-        *) return 0 ;;
+        "")
+            if [ "$default" = "no" ]; then
+                return 1
+            fi
+            ;;
     esac
+    return 0
 }

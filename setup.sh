@@ -260,6 +260,13 @@ main_uninstall() {
     echo ""
 }
 
+FORCE_SSHD=0
+if [ "${1:-}" = "--force" ]; then
+    FORCE_SSHD=1
+    shift
+fi
+export SETUP_SSHD_FORCE="$FORCE_SSHD"
+
 case "${1:-}" in
     --help|-h)
         echo ""
@@ -269,6 +276,7 @@ case "${1:-}" in
         echo "  (none)       Launch interactive fzf menu"
         echo "  --uninstall  Uninstall selected tools"
         echo "  --regen      Regenerate the env file"
+        echo "  --force      Override existing system-wide sshd config"
         echo "  --help       Show this help"
         echo ""
         ;;
